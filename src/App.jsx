@@ -84,3 +84,73 @@ function App() {
 }
 
 export default App;
+function App() {
+  const canvasRef = useRef(null);
+  const [board, setBoard] = React.useState(createEmptyBoard());
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    canvas.width = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+    canvas.height = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+
+    const ctx = canvas.getContext('2d');
+    drawBoard(ctx, board);
+  }, [board]);
+
+  function createEmptyBoard() {
+    const arr = [];
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      arr[i] = new Array(BOARD_SIZE).fill(null);
+    }
+    return arr;
+  }
+
+  function drawBoard(ctx, boardState) {
+    // (Same drawBoard function as before)
+    // Add stone drawing logic here:
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const stone = boardState[r][c];
+        if (stone) {
+          drawStone(ctx, c, r, stone);
+        }
+      }
+    }
+  }
+
+  function drawStone(ctx, col, row, color) {
+    const x = PADDING + col * CELL_SIZE;
+    const y = PADDING + row * CELL_SIZE;
+    ctx.beginPath();
+    ctx.arc(x, y, CELL_SIZE / 2 - 2, 0, 2 * Math.PI, false);
+    ctx.fillStyle = color === 'B' ? '#000' : '#FFF';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+  }
+
+  function handleClick(e) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left - PADDING;
+    const y = e.clientY - rect.top - PADDING;
+    const col = Math.round(x / CELL_SIZE);
+    const row = Math.round(y / CELL_SIZE);
+
+    if (col >= 0 && col < BOARD_SIZE && row >= 0 && row < BOARD_SIZE) {
+      const newBoard = board.map((r) => r.slice());
+      newBoard[row][col] = 'B'; // Place a black stone for now
+      setBoard(newBoard);
+    }
+  }
+
+  return (
+    <div style={{ textAlign: 'center', marginTop: '20px' }}>
+      <h1>LearnGO</h1>
+      <canvas
+        ref={canvasRef}
+        style={{ border: '1px solid #000', display: 'block', margin: '0 auto' }}
+        onClick={handleClick}
+      />
+    </div>
+  );
+}
