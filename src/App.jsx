@@ -154,13 +154,6 @@ function App() {
     const newBoard = currentBoard.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
-    // Check for suicide rule
-    const liberties = calculateLiberties(newBoard, row, col, currentPlayer);
-    if (liberties.length === 0) {
-      setIllegalMoveMessage("Illegal move: Suicide is not allowed.");
-      return;
-    }
-
     const newHistory = history.slice(0, currentStep + 1);
     newHistory.push(newBoard);
     setHistory(newHistory);
@@ -169,54 +162,14 @@ function App() {
     setIllegalMoveMessage("");
   }
 
-  // Calculate liberties for a stone or group
-  function calculateLiberties(board, row, col, color) {
-    const visited = Array.from({ length: BOARD_SIZE }, () =>
-      new Array(BOARD_SIZE).fill(false)
-    );
-    const stack = [[row, col]];
-    const liberties = [];
-
-    while (stack.length > 0) {
-      const [r, c] = stack.pop();
-      if (visited[r][c]) continue;
-      visited[r][c] = true;
-
-      const neighbors = getNeighbors(r, c);
-      for (const [nr, nc] of neighbors) {
-        if (board[nr][nc] === null) {
-          liberties.push([nr, nc]);
-        } else if (board[nr][nc] === color && !visited[nr][nc]) {
-          stack.push([nr, nc]);
-        }
-      }
-    }
-
-    return liberties;
-  }
-
-  // Get neighbors of a point
-  function getNeighbors(r, c) {
-    const deltas = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-    const neighbors = [];
-    for (const [dr, dc] of deltas) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
-        neighbors.push([nr, nc]);
-      }
-    }
-    return neighbors;
-  }
-
   // Add logic for hint
   function showHint() {
     setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) }); // Example: center of board
+
+    // Set a timeout to remove the hint after 3 seconds
+    setTimeout(() => {
+      setHintMove(null); // Clear the hint after 3 seconds
+    }, 3000);
   }
 
   // Move back in history
