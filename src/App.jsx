@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import axios from 'axios'; // For fetching puzzle data
 
 const BOARD_SIZE = 19; // 19x19 board
 const CELL_SIZE = 30; // Size of each cell
@@ -7,10 +8,16 @@ const PADDING = 40; // Padding around the board
 function App() {
   const canvasRef = useRef(null);
 
-  // State management
+  // Game state
   const [board, setBoard] = useState(createEmptyBoard());
   const [currentPlayer, setCurrentPlayer] = useState('B'); // 'B' for Black, 'W' for White
   const [illegalMoveMessage, setIllegalMoveMessage] = useState('');
+  const [history, setHistory] = useState([{ board: createEmptyBoard(), currentPlayer: 'B' }]);
+  const [currentStep, setCurrentStep] = useState(0);
+
+  // Puzzle state
+  const [puzzle, setPuzzle] = useState(null); // Puzzle data from server
+  const [puzzleHint, setPuzzleHint] = useState(null); // Coordinates of the next move hint
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -18,10 +25,14 @@ function App() {
     canvas.height = BOARD_SIZE * CELL_SIZE + PADDING * 2;
 
     const ctx = canvas.getContext('2d');
-    drawBoard(ctx, board);
-  }, [board]);
+    drawBoard(ctx, board, puzzleHint);
+  }, [board, puzzleHint]);
 
-  // Helper function to create an empty 19x19 board
+  // Load puzzle data on component mount
+  useEffect(() => {
+    fetchPuzzle();
+  }, []);
+
   function createEmptyBoard() {
     const arr = [];
     for (let i = 0; i < BOARD_SIZE; i++) {
@@ -30,13 +41,36 @@ function App() {
     return arr;
   }
 
-  // Function to draw the board and stones
-  function drawBoard(ctx, boardState) {
-    // Draw background
+  function fetchPuzzle() {
+    axios
+      .get('/puzzles/random') // Assuming the backend serves a random puzzle
+      .then((response) => {
+        const puzzleData = response.data;
+        setPuzzle(puzzleData);
+
+        // Apply initial puzzle state
+        const newBoard = createEmptyBoard();
+        puzzleData.initialPosition.B.forEach(([row, col]) => {
+          newBoard[row][col] = 'B';
+        });
+        puzzleData.initialPosition.W.forEach(([row, col]) => {
+          newBoard[row][col] = 'W';
+        });
+        setBoard(newBoard);
+        setHistory([{ board: newBoard, currentPlayer: 'B' }]); // Reset history
+        setCurrentStep(0);
+      })
+      .catch((error) => {
+        console.error('Failed to load puzzle:', error);
+      });
+  }
+
+  function drawBoard(ctx, boardState, hint) {
+    // Background
     ctx.fillStyle = '#f7c87b';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    // Draw grid lines
+    // Grid lines
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
 
@@ -53,11 +87,11 @@ function App() {
       // Horizontal lines
       ctx.beginPath();
       ctx.moveTo(PADDING, y);
-      ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE, y);
+      ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
       ctx.stroke();
     }
 
-    // Draw coordinates
+    // Coordinates
     const columns = 'ABCDEFGHIJKLMNOPQRST'.split('');
     ctx.fillStyle = '#000';
     ctx.font = '14px sans-serif';
@@ -89,9 +123,14 @@ function App() {
         }
       }
     }
+
+    // Highlight hint if available
+    if (hint) {
+      const [hintRow, hintCol] = hint;
+      drawHint(ctx, hintCol, hintRow);
+    }
   }
 
-  // Function to draw a stone
   function drawStone(ctx, col, row, color) {
     const x = PADDING + col * CELL_SIZE;
     const y = PADDING + row * CELL_SIZE;
@@ -103,22 +142,20 @@ function App() {
     ctx.stroke();
   }
 
-  // Function to handle click events
+  function drawHint(ctx, col, row) {
+    const x = PADDING + col * CELL_SIZE;
+    const y = PADDING + row * CELL_SIZE;
+    ctx.beginPath();
+    ctx.arc(x, y, CELL_SIZE / 2 - 5, 0, 2 * Math.PI, false);
+    ctx.fillStyle = 'rgba(135, 206, 250, 0.6)'; // Light blue color
+    ctx.fill();
+  }
+
   function handleClick(e) {
     const { gridX, gridY } = getGridCoords(e.clientX, e.clientY);
     placeStone(gridX, gridY);
   }
 
-  // Function to handle touch events
-  function handleTouch(e) {
-    const touch = e.touches[0];
-    if (touch) {
-      const { gridX, gridY } = getGridCoords(touch.clientX, touch.clientY);
-      placeStone(gridX, gridY);
-    }
-  }
-
-  // Get grid coordinates from mouse/touch events
   function getGridCoords(clientX, clientY) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -129,83 +166,63 @@ function App() {
     return { gridX, gridY };
   }
 
-  // Place a stone on the board
   function placeStone(col, row) {
     if (col < 0 || col >= BOARD_SIZE || row < 0 || row >= BOARD_SIZE) return; // Out of bounds
     if (board[row][col] !== null) return; // Space is already occupied
 
-    // Create a new board with the stone placed
     const newBoard = board.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
-    // Check for suicides or invalid moves
-    const isSuicide = checkSuicide(newBoard, row, col, currentPlayer);
-    if (isSuicide) {
-      setIllegalMoveMessage('Illegal move, not allowed.');
-      return;
-    }
-
-    // Update the board and switch players
     setBoard(newBoard);
+    setHistory([...history.slice(0, currentStep + 1), { board: newBoard, currentPlayer }]);
+    setCurrentStep(currentStep + 1);
     setCurrentPlayer(currentPlayer === 'B' ? 'W' : 'B');
-    setIllegalMoveMessage(''); // Clear any previous illegal move messages
+    setIllegalMoveMessage('');
   }
 
-  // Check if a move is a suicide
-  function checkSuicide(boardState, row, col, color) {
-    const liberties = getLiberties(boardState, row, col, color);
-    return liberties.length === 0;
-  }
-
-  // Get liberties for a stone
-  function getLiberties(boardState, row, col, color) {
-    const visited = new Set();
-    const stack = [[row, col]];
-    const liberties = [];
-
-    while (stack.length > 0) {
-      const [r, c] = stack.pop();
-      const key = `${r},${c}`;
-      if (visited.has(key)) continue;
-      visited.add(key);
-
-      const neighbors = getNeighbors(r, c);
-      for (const [nr, nc] of neighbors) {
-        if (boardState[nr][nc] === null) {
-          liberties.push([nr, nc]);
-        } else if (boardState[nr][nc] === color) {
-          stack.push([nr, nc]);
-        }
-      }
+  function handleHint() {
+    if (puzzle && puzzle.solutionLines && puzzle.solutionLines.length > currentStep) {
+      const nextMove = puzzle.solutionLines[currentStep];
+      setPuzzleHint(nextMove.move); // Highlight the next move
     }
-
-    return liberties;
   }
 
-  // Get neighboring intersections
-  function getNeighbors(r, c) {
-    const deltas = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    return deltas
-      .map(([dr, dc]) => [r + dr, c + dc])
-      .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
+  function moveBack() {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      const previousBoard = history[currentStep - 1].board;
+      setBoard(previousBoard);
+      setIllegalMoveMessage('');
+    }
+  }
+
+  function moveForward() {
+    if (currentStep < history.length - 1) {
+      setCurrentStep(currentStep + 1);
+      const nextBoard = history[currentStep + 1].board;
+      setBoard(nextBoard);
+      setIllegalMoveMessage('');
+    }
   }
 
   return (
     <div style={{ textAlign: 'center', marginTop: '20px' }}>
-      <div style={{ marginBottom: '10px' }}>
-        Current Player: {currentPlayer === 'B' ? 'Black' : 'White'}
-      </div>
+      <div>Current Player: {currentPlayer === 'B' ? 'Black' : 'White'}</div>
       <canvas
         ref={canvasRef}
-        style={{ border: '1px solid #000', display: 'block', margin: '0 auto' }}
+        style={{ border: '1px solid black', margin: '10px auto', display: 'block' }}
         onClick={handleClick}
-        onTouchStart={handleTouch}
       />
-      {illegalMoveMessage && (
-        <div style={{ color: 'red', marginTop: '10px' }}>
-          {illegalMoveMessage}
-        </div>
-      )}
+      <div>
+        <button onClick={moveBack} disabled={currentStep === 0}>
+          Move Back
+        </button>
+        <button onClick={moveForward} disabled={currentStep >= history.length - 1}>
+          Move Forward
+        </button>
+        <button onClick={handleHint}>Hint</button>
+      </div>
+      {illegalMoveMessage && <div style={{ color: 'red' }}>{illegalMoveMessage}</div>}
     </div>
   );
 }
