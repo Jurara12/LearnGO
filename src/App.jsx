@@ -57,6 +57,35 @@ function App() {
       ctx.stroke();
     }
 
+    // Coordinates
+    const columns = 'ABCDEFGHIJKLMNOPQRST'.split('');
+    ctx.fillStyle = '#000';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Draw letters (top/bottom)
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      const letter = columns[i];
+      const x = PADDING + i * CELL_SIZE;
+      // Top
+      ctx.fillText(letter, x, PADDING - 20);
+      // Bottom
+      ctx.fillText(letter, x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20);
+    }
+
+    // Draw numbers (left/right)
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      const number = BOARD_SIZE - i; // Numbers decrease from top to bottom
+      const y = PADDING + i * CELL_SIZE;
+
+      ctx.textAlign = 'right';
+      ctx.fillText(number, PADDING - 20, y);
+
+      ctx.textAlign = 'left';
+      ctx.fillText(number, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20, y);
+    }
+
     // Draw stones
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -148,76 +177,10 @@ function App() {
     return liberties.length === 0;
   }
 
-  // Calculate liberties of a stone or group
-  function calculateLiberties(board, row, col, player) {
-    const visited = new Set();
-    const liberties = [];
-
-    function dfs(r, c) {
-      const key = `${r},${c}`;
-      if (visited.has(key)) return;
-      visited.add(key);
-
-      const neighbors = getNeighbors(r, c);
-      for (const [nr, nc] of neighbors) {
-        if (board[nr][nc] === null) {
-          liberties.push([nr, nc]);
-        } else if (board[nr][nc] === player) {
-          dfs(nr, nc);
-        }
-      }
-    }
-
-    dfs(row, col);
-    return liberties;
-  }
-
-  // Capture opponent stones
-  function captureStones(board, row, col, player) {
-    const opponent = player === 'B' ? 'W' : 'B';
-    const neighbors = getNeighbors(row, col);
-
-    for (const [nr, nc] of neighbors) {
-      if (board[nr][nc] === opponent) {
-        const liberties = calculateLiberties(board, nr, nc, opponent);
-        if (liberties.length === 0) {
-          removeGroup(board, nr, nc);
-        }
-      }
-    }
-  }
-
-  // Remove a group of stones from the board
-  function removeGroup(board, row, col) {
-    const visited = new Set();
-    const color = board[row][col];
-
-    function dfs(r, c) {
-      const key = `${r},${c}`;
-      if (visited.has(key)) return;
-      visited.add(key);
-
-      board[r][c] = null;
-
-      const neighbors = getNeighbors(r, c);
-      for (const [nr, nc] of neighbors) {
-        if (board[nr][nc] === color) {
-          dfs(nr, nc);
-        }
-      }
-    }
-
-    dfs(row, col);
-  }
-
-  // Get neighboring cells
-  function getNeighbors(row, col) {
-    const directions = [
-      [-1, 0], [1, 0], [0, -1], [0, 1],
-    ];
-    return directions
-      .map(([dr, dc]) => [row + dr, col + dc])
-      .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
+  // Add logic for hint
+  function showHint() {
+    // Example hint logic: pick the center of the board
+    setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) });
   }
 
   // Move back in history
@@ -253,6 +216,7 @@ function App() {
         <button onClick={moveForward} disabled={currentStep === history.length - 1}>
           Move Forward
         </button>
+        <button onClick={showHint}>Hint</button>
       </div>
       {illegalMoveMessage && (
         <div style={{ marginTop: '10px', color: 'red' }}>
