@@ -1,0 +1,1198 @@
+SGF Syntax Checker & Converter: SGFC V2.0
+=========================================
+
+SGFC Copyright (C) 1996-2021 by Arno Hollosi <ahollosi@xmp.net>
+
+SGFC is open source software and is published under the terms of the
+BSD License. Read 'COPYING' for more information.
+
+
+Contents:
+=========
+
+1 ... What is it?
+
+2 ... List of files
+
+3 ... Installing / Building
+
+4 ... Invoking SGFC
+      4.1 ... A note on character encodings
+      4.2 ... Option summary (alphabetical)
+      4.3 ... Examples
+      4.4 ... Detailed description
+
+5 ... Output
+      5.1 ... Exit codes
+      5.2 ... Status line
+      5.3 ... Error messages
+
+Appendix A: History / Release notes
+
+Appendix B: Known properties
+
+Appendix C: List of error codes and possible causes
+
+
+
+1. What is it?
+==============
+
+SGF is the 'Smart Game Format' file format for storing game records.
+It's a text only, tree based format.
+
+The specification of the SGF format can be found at:
+
+	http://www.red-bean.com/sgf/
+
+SGFC is a command line tool for checking SGF files for correctness and
+correcting any errors. It also converts FF[1]-FF[3] files to FF[4].
+
+SGFC is THE reference implementation for the SGF FF[4] standard.
+If this tool differs from the specification then the specification is
+right and SGFC has a bug - in that case please contact me immediately!
+
+SGFC is intended to be a tool for SGF experts, coders and maintainers of
+large SGF archives. You ought to have quite some knowledge of SGF to use
+SGFC efficiently.
+
+SGFC was written primarily for Go/WeiQi/Baduk (GM[1]) files. It cannot handle
+other games yet, i.e. it does not check any game-specific properties and
+values of other games than Go. It may even save erroneous game-specific
+properties of other games! Use SGFC for other games with care.
+
+The latest version of SGFC can be downloaded from:
+
+	http://www.red-bean.com/sgf/sgfc/
+
+If you've any suggestions, problems, criticism or found a bug then
+send an email to <ahollosi@xmp.net>.
+
+Please include:
+  - the version number of SGFC (just invoke 'sgfc' without parameters)
+  - which operating system you are using
+  - a short SGF file, where the error occurs
+
+
+
+2. List of files:
+=================
+
+The root directory contains the following files:
+
+CMakeLists.txt  CMake file as used on my machine
+COPYING         the BSD License
+Makefile        Makefile as used for gcc on my machine
+README          this file
+
+The program source files are located in the src/ subdirectory:
+
+all.h           general include file with all structures and defines
+protos.h        contains all function prototypes and 'extern' variables
+main.c          contains main()
+options.c       contains argument parsing
+load.c          contains all routines necessary for loading the SGF file
+                and building up a tree structure
+save.c          just the opposite to load.c
+properties.c    contains the array sgf_token[] which defines all properties
+                and their features
+parse.c         contains syntax and semantic checks for property values
+parse2.c        contains parsing of node and property structure
+                and additional functions (fix variations, calculate game
+                signature, delete empty nodes, ...)
+gameinfo.c      contains parsing and correcting of game-info properties.
+                (includes functions for interactive mode)
+execute.c       contains routines that actually execute the properties,
+                e.g. play the game on a board capture stones etc.
+                This is used to detect more sophisticated errors and to do
+                necessary transformations
+strict.c        contains the functions for restrictive checking (option -r)
+util.c          misc. functions; error messages
+test-files/     subdirectory with some test files, see README there
+tests/          subdirectory with some unit tests, see README there
+
+
+I use tab size of 4 (instead the usual 8) in my sources.
+You've to set the tab size of your editor accordingly to get a
+readable source with reasonable indentations.
+
+
+
+3. Installing / Building:
+=========================
+
+If you've an ANSI compliant C compiler on your system just type 'make'.
+The include files have to be ANSI compliant too! If your system does not fit
+these requirements then ask a local system guru to help you.
+
+Note: on some machines, you may have to specify a shell and the processor
+      type in the Makefile -- in that case you have to edit the Makefile.
+      Right now it does not specify either in order to be machine independent.
+      See additional defines below too.
+
+If you are compiling SGFC manually then just compile each file to get the
+object files and link those object files together (using a proper link
+library).
+
+There are various defines in all.h to customize SGFC:
+
+EOLCHAR:
+--------
+You can define the character used to indicate the end of line. This is only
+used when SGFC writes a file, because SGFC automatically detects any kind
+of linebreak during reading. 
+This define is useful if you want SGFC to write SGF files using the
+linebreak-code specific to your machine (e.g. Mac or MSDos).
+
+VERSION_NO_MAIN:
+----------------
+In case you've written a new main() function, e.g. a nice GUI, you can use
+this define, so that main() does not get compiled.
+
+
+
+4. Invoking SGFC:
+=================
+
+Usage: 'sgfc [options] infile [outfile]'
+
+Option arguments have to be preceded by a '-'.
+
+If the 'outfile' is missing, SGFC just checks the 'infile'.
+Conversion to FF[4] takes place only if you specify the 'outfile'.
+'outfile' may be the same as 'infile'.
+
+In order to specify filenames with a leading '-' separate the filename
+arguments from the options with a single '--'.
+Example: sgfc -n -pet -- -in.sgf -out.sgf
+
+
+4.1 A note on character encodings
+---------------------------------
+
+SGFC and the SGF specification have their origins in the past century,
+when Unicode was just 2 years old, and almost no operating system or
+framework supported it. Hence, the SGF specification took a very
+conservative stance and defined the ASCII compatible ISO-8859-1 encoding
+as default encoding. It even went so far defining that *if* other
+encodings were to be used, they are only valid *inside* property values,
+not outside it.
+
+Hence, a conforming SGF parser would first use ISO-8859-1 in order to
+parse the structure (skeleton) of the SGF tree (nodes, properties, and
+property value boundaries), including(!) escaping with '\', before parsing
+the text inside the property values according to the supplied encoding.
+Some 30 years later this approach looks antiquated. It also breaks the notion
+of SGF as text files.
+
+With V2.0 SGFC is aware of charset encodings and tries to strike a balance
+between de-facto usage and specification conformity. While files are now
+always saved as UTF-8, it supports three encoding modes while parsing a file
+(see detailed description of -E option). Note that all three modes can deal with
+almost all input files, as thankfully, most common encodings today are
+ASCII-compatible (i.e. ASCII characters do have an ASCII byte value encoding).
+But if encodings are not ASCII-safe (i.e. ASCII characters may appear as part
+of multi-byte sequence encodings, like in e.g. GB18030 or Shift_JIS),
+then results might differ depending on the encoding mode used and some characters
+might be broken in the output file.
+
+SGFC uses iconv (or more precisely libiconv) in order to support different encodings.
+Therefore supported encodings (and their names) depend on the version of iconv
+on your system. Under Unix systems try "man iconv" or "man 3 iconv" to get additional
+information about your system.
+
+
+4.2 Option summary (alphabetical):
+----------------------------------
+
+    -bx ... Beginning of SGF data is detected by
+                1 - search algorithm (default)
+                2 - first occurrence of '(;'
+                3 - first occurrence of '('
+    -c  ... write file even if a critical error occurs
+    -dn ... n = number : disable message number -n-
+    -e  ... expand compressed point lists
+    -Ex ... x = 1,2,3: charset encoding is applied to
+              1 - to whole SGF file, _before_ parsing (unit=char; default)
+              2 - text property values only, _after_ parsing (unit=byte)
+              3 - no encoding applied (binary style; unit=byte)
+    -g  ... print game signature (Go GM[1] games only)
+    -h  ... print a help message with all options
+    -i  ... interactive mode (faulty game-info values only)
+    -k  ... keep header in front of SGF data
+    -lx ... x = 1,2,3: a hard linebreak is
+                1 - any linebreak encountered (default)
+                2 - any linebreak not preceded by a space (MGT)
+                3 - two linebreaks in a row
+                4 - paragraph style (ISHI format, MFGO)
+    -L  ... try to keep linebreaks at the end of nodes
+    -m  ... delete markup on current move
+    -n  ... delete empty nodes
+    -o  ... delete obsolete properties
+    -p  ... write pass moves as '[tt]' if possible
+    -r  ... restrictive checking
+    -s  ... split game collection into single files
+    -t  ... do not insert any soft linebreaks into text values
+    -u  ... delete unknown properties
+    -U  ... alias for '--default-encoding=UTF-8'
+    -v  ... correct variation level and root moves
+    -w  ... disable warning messages
+    -yP ... delete property P (P = property id)
+    -z  ... reverse ordering of variations
+
+    --help    ... print a help message (same as -h)
+    --version ... print version number
+    --default-encoding=name ... set default encoding to 'name' (CA[] has priority)
+    --encoding=name         ... override encoding specified in SGF file with 'name'
+
+
+4.3 Examples:
+-------------
+
+    'sgfc -h' ... prints help message
+
+    'sgfc game.sgf' ... check 'game.sgf' for correctness
+
+    'sgfc -pet game.sgf game.sgf' ... Check and overwrite 'game.sgf'
+          with expanded point lists, '[tt]' pass moves and no soft
+          linebreaks - writing FF[4] files like this is the most
+          compatible way for old (FF[3]) applications
+
+    'sgfc -wd20d12el2 game.sgf game2.sgf' ... disable all warnings and
+          messages #20, #12; expand compressed point lists and apply
+          linebreakstyle 2. The outputfile is saved to 'game2.sgf'.
+
+    'sgfc -w -d20 -d12 -e -l2 game.sgf game2.sgf' ... same as above
+
+    'sgfc game.sgf game.sgf' ... check and overwrite 'game.sgf'
+
+
+4.4 Detailed description:
+-------------------------
+
+Option -b:
+----------
+Select method for searching the beginning of SGF data.
+
+SGF files may be preceded by plain text. In most cases this is an
+email header which has not been removed.
+
+In order to find the SGF data SGFC searches for '(;' which marks the
+beginning. But some erroneous files mark the beginning only with '('.
+To detect such files SGFC uses a more sophisticated search. However
+this search might go wrong (in seldom cases).
+
+Values:
+    -b1 ... use search algorithm that is capable of detecting missing ';'
+            in most cases
+    -b2 ... the first '(;' is searched.
+            Note: missing ';' at the beginning will not be detected, but
+            whole tree will be omitted until first '(;'
+    -b3 ... the first '(' is searched.
+            Note: This is the best choice if the SGF data is not preceded
+            by plain text. If there's text in front of the SGF data then
+            it's likely that problems will occur.
+
+
+Option -c:
+----------
+Write file even if a critical error occurs.
+
+Critical errors indicate that the SGF file may be severely damaged and that
+information may be lost during the conversion.
+Treat critical warnings/errors with care!
+
+Have a look at the 'List of error codes' to see which critical errors
+may occur.
+
+
+Option -dn:
+-----------
+Disable message number -n-.
+
+SGFC is a rather pedantic syntax checker.
+If you want to limit the number of messages you get then specify this
+option. With '-d' it's possible to disable specific messages.
+Fatal error messages cannot be disabled.
+
+Hint: there are messages which can be printed up to 100 times, but which
+are not really critical. These messages are
+Warning 17: removed empty value (e.g. 'C[]')
+Warning 29: deleted property <x> (when specifying -o or -yXX)
+Warning 40: property not part of FF[x] (e.g. FF[3] file without FF[] property)
+
+To disable these messages specify: -d24d29d40
+
+
+Option --default-encoding=name:
+-------------------------------
+Set default encoding to provided name.
+
+Allows setting the desired default encoding if no CA[] property is specified.
+On the flip side, if a CA[] property is specified, it overrides this option.
+The default encoding (if this option is not specified) is ISO-8859-1.
+
+The option -U is a handy alias for '--default-encoding=UTF-8'.
+
+
+Option -e:
+----------
+Expand compressed point lists
+
+FF[4] provides a compressed format to store long point lists.
+However this compressed format is incompatible to FF[3] only applications.
+If you are concerned about compatibility with old applications you
+should avoid the new format and specify this option.
+
+The new format only affects point lists and not single moves (e.g. B or W).
+
+
+Option -E:
+----------
+Encoding mode used during reading/parsing a file
+
+SGFC provides three different modes while parsing an SGF file. Depending
+on how the SGF file was encoded, parsing SGF might result in some broken
+characters in text values, or even missing properties in some cases.
+
+The three modes are:
+    1 - apply encoding to whole SGF file, _before_ parsing (default)
+    2 - text property values only, _after_ parsing
+    3 - no encoding applied (binary style)
+
+Mode -E1 (default):
+In this mode SGFC treats the whole file (including the SGF skeleton and all
+property values) as having a single encoding. This is what you most likely
+encounter on the internet. It treats the SGF file like a text file with
+the given encoding. Strictly, speaking, this mode does not conform to the
+SGF specification. It currently has the limitation, that only a single
+encoding is allowed for the whole file. On the upside, '\'-escaping does
+not occur within multi-byte characters.
+
+Mode -E2 (specification conformant):
+In this mode SGFC parses SGF files according to the spec: only text
+property values are decoded according to the charset given. Note that in
+this mode escaping is done first, i.e. in non-ASCII-safe encodings
+'\'-escaping could occur *within* multi-byte characters. In this mode,
+SGFC is able to handle different encodings of game trees within a
+collection (i.e. multiple encodings in a single file, for an example see
+test-files/mixed-encoding.sgf)
+
+Mode -E3 (binary/legacy):
+In this mode SGFC ignores all encoding rules, and treats the values as binary,
+which basically means, it treats the file as ASCII-compatible without applying
+any decoding whatsoever. Again, escaping could occur within multi-byte
+characters. This is how SGFC prior to V2.0 treated SGF files. Note that in this
+mode SGFC will *not* save files in UTF-8, but keep the property values as is.
+
+
+Option --encoding=name:
+-----------------------
+Override encoding specified in SGF file with 'name'.
+
+This option can be used to forcefully override any encoding value specified
+within the SGF file. It is helpful when SGFC is unable to detect the correct
+encoding of the file.
+
+Note that supported encodings and their canonical names depend on the
+iconv library the SGFC binary is linked against. If an encoding is not recognized,
+then use the original iconv tools on your system in order to list available
+character encodings. Unfortunately, SGFC cannot provide a list of supported
+encodings, as POSIX's libiconv does not offer the ability to query for supported
+encodings.
+
+
+Option -g:
+----------
+Print game signature (works for Go GM[1] games only)
+
+The game signature consists of two parts: a primary and a secondary part.
+The primary signature consists of moves 20, 40 and 60.
+The secondary signature consists of moves 31,51 and 71.
+
+The chosen moves make it very unlikely that different games have the same
+signature - thus the signature may serve as unique ID e.g. within databases.
+For more information on signatures have a look at Dave Dyer's web pages.
+
+The output looks like:
+
+"Game signature - tree 1: 'onqsrq lporke'" (ear reddening move game)
+or
+"Game signature - tree 2: contains GM[12] - cannot calculate signature"
+
+
+Option -h / --help:
+-------------------
+Print help message with all available options.
+
+
+Option -i:
+----------
+Interactive mode (faulty game-info values only).
+
+Asks user to correct faulty game info values.
+Right now following properties may be queried: DT, RE, KM and TM.
+Have a look at the SGF specification for a format description.
+
+If you want to keep the faulty value or use the suggested value then
+just type <return>. If you want to delete the value then type 'd'.
+Otherwise just type in the new value.
+
+Your input is checked for correctness and rejected if there are any
+syntax errors. Note: no trailing or preceding spaces, case sensitive check.
+To make it a little easier for you, SGFC tries to correct your input
+and if successful provides it as default value the next time your asked.
+
+Hint: this can be (mis-)used to input values the way you are used to, e.g.:
+date:   "14 apr 97"
+result: "black wins by resignation"
+time:   "9 hours"
+komi:   "five and a half points"
+
+
+Option -k:
+----------
+Keep header in front of SGF data.
+
+SGF files may be preceded by plain text. In most cases this is an
+email header which has not been removed. By default SGFC removes
+this header as it should not contain relevant information.
+
+
+Option -l:
+----------
+Define the way SGFC treats linebreaks within texts.
+
+FF[4] distinguishes two types of linebreaks: hard and soft ones.
+Hard linebreaks are linebreaks that are displayed.
+Soft linebreaks are not displayed by the application.
+This is useful for limiting line lengths for mailing/posting SGF files.
+
+SGFC offers 4 different styles for reading in text.
+Text is ALWAYS written in a FF[4] compatible way.
+During reading, a hard linebreak is
+        1 - any linebreak encountered (default)
+        2 - any linebreak not preceded by a space (MGT)
+        3 - two linebreaks in a row
+        4 - paragraph style (ISHI format, MFGO)
+
+
+Option -L:
+----------
+Try to keep linebreaks at the end of nodes.
+
+When writing the output file, SGFC will try to make each line end at
+the end of a node.  This is purely cosmetic, but may make the
+resulting SGF file easier to read or edit.
+
+
+Option -m:
+----------
+Delete markup on current move.
+
+Some Go game servers create SGF files where the current move
+is also marked with e.g. a circle (CR[]). Many people find this
+annoying. By specifying this option any markup (properties MA, CR,
+TR, SQ, SL) on the position of the current move will be deleted.
+
+
+Option -n:
+----------
+Delete empty nodes.
+
+Removes nodes which contain no properties.
+There are empty nodes which cannot be deleted. These nodes are:
+
+- root node if it has more than one child
+- a node which has siblings and has more than one child
+
+
+Option -o /-u:
+--------------
+Delete obsolete/unknown properties.
+
+SGFC knows all FF[4] properties (general ones and Go specific ones) and
+all FF[1]-FF[3] properties defined by the specifications of Anders Kierulf
+and Martin Müller (it does not know all SGB properties though).
+I.e. any unknown property encountered is likely to be a private property
+of the application used to write this file.
+
+Obsolete properties are properties which are not part of FF[4],
+E.g. 'RG' a markup property was defined for FF[1]-FF[3] but not for FF[4].
+Note: two obsolete properties are not deleted but converted to their FF[4]
+counterpart. These properties are: 'M' and 'L'.
+
+Have a look at Appendix C for properties known to SGFC.
+
+
+Option -p:
+----------
+Write pass moves as '[tt]' if possible.
+
+FF[4] allows writing pass moves as '[]'. Older applications cannot deal with
+this value. If you are concerned about compatibility to old applications
+you should avoid the new format and specify this option.
+
+'[tt]' pass moves are only possible for boards <19x19.
+If the board is bigger than 19x19 this option is ignored.
+
+
+Option -r:
+----------
+Enable restrictive checking.
+
+If this option is set then SGFC is even more pedantic than usual.
+It is designed to flag all kind of bad style or uncommon characteristics
+that can cause problems with applications just able to deal with common
+cases. For example, if the SGF file contains more than one game tree SGFC
+now issues an error instead of a warning.
+
+Furthermore for Go GM[1] games it is checked that no two successive moves
+have the same color, that not setup (AB/AW/AE) occurs in the main branch
+apart from the root node, and that the HA property is set correctly.
+
+
+Option -s:
+----------
+Split game collection into single files.
+
+SGF allows to store more than one game in a file. But not all applications
+can deal with game collections.
+If you set this option SGFC writes each game into a separate file.
+
+Naming convention: 'outfile_xxx.sgf'
+where 'outfile' is the name you specified as output file and 'xxx' is
+a number starting from '001'.
+
+Example: 'sgfc -s in.sgf out' produces 'out_001.sgf', 'out_002.sgf' etc.
+
+
+Option -t:
+----------
+Do not insert soft linebreaks into text.
+
+FF[4] specifies two types of linebreaks: hard and soft ones.
+Soft linebreaks are linebreaks which are not displayed.
+By default SGFC inserts soft linebreaks wherever necessary to limit the
+line length to 76 chars.
+
+However old applications cannot deal with soft linebreaks.
+If you are concerned about compatibility to old applications you should
+avoid soft linebreaks and specify this option.
+
+
+Option -U:
+----------
+Alias for '--default-encoding=UTF-8'. See there.
+
+
+Option -v:
+----------
+Correct variation level and root moves.
+
+It's bad style to have alternative moves at different tree levels.
+
+Some applications chose that way to represent variations as siblings
+instead of children - they added a child node, removed the latest move
+by using an AE property and put the alternative move into the node.
+
+Example: >>(;GM[1];B[aa](;W[bb])(;AE[aa]B[cc])(;AE[aa]B[dd]))<<
+Correct: >>(;GM[1](;B[aa];W[bb])(;B[cc])(;B[dd]))<<
+
+When -v is specified SGFC tries to correct such variations
+(this works only for Go GM[1] games).
+
+And it corrects another bad style: root nodes containing the first move
+(this works for all kind of games).
+
+Example: >>(;GM[1]C[first move in root node]GC[bad style]B[aa])<<
+Correct: >>(;GM[1]GC[good style];B[aa]C[first move not in root node])<<
+
+
+Option --version:
+-----------------
+Print version number of SGFC and exit.
+
+
+Option -w:
+----------
+Disable warning messages.
+
+SGFC is a rather pedantic syntax checker. If you want to limit the number
+of messages you get specify this option.
+
+
+Option -y:
+----------
+Delete property.
+
+This option allows you to delete specific properties.
+You have to add the property id as listed in 'Appendix C: Known Properties'.
+
+Right now only properties known to SGFC may be deleted by using this option.
+
+
+Option -z:
+----------
+Reverse ordering of variations.
+
+This option fixes bad style SGF files, where the main line of the game
+is not in the main branch (variation 'A'), but instead is the last
+variation. Effectively, variations A,B,C,D are reordered as D,C,B,A.
+
+The function cannot reorder more than 100 variations of a single node.
+If this limit is too low for you, then you need to set
+MAX_REORDER_VARIATIONS in all.h to a higher value and recompile SGFC.
+
+
+
+5. Output:
+==========
+
+SGFC prints error (warning) messages during parsing the input file and
+a status line after completing.
+
+
+5.1 Exit codes:
+---------------
+
+Upon finishing SGFC returns
+
+ 0 ... if everything was ok (note: ignored messages may occur)
+ 5 ... if there were warnings
+10 ... if there were errors
+20 ... if a fatal error occurred
+
+
+5.2 Status line:
+----------------
+
+"file: [x error(s)] [x warning(s)] [(critical:x)] [(x message(s) ignored)]"
+Where 'file' is the name of the input file and
+      'x' is the number of errors, warnings, critical & ignored messages.
+
+If no message was issued then SGFC prints "file: OK  [(x message(s) ignored)]"
+
+
+5.3 Error messages:
+-------------------
+
+"[Line:x Col:x - ] Message type and number [(critical)]: message text"
+
+Where 'x' is the number of the line and column of the cause for the message.
+
+Message type is either: 'Error', 'Warning' or 'Fatal error'
+A fatal error stops execution and SGFC exits.
+
+Messages can be critical, which by default forbids saving the file.
+Critical messages indicate possible loss of information.
+
+A property identifier within the message text is enclosed by '<' and '>'.
+
+Examples:
+  Line:2 Col:56 - Error 8 (critical): illegal char(s) found: "fsgdf"
+  Line:35 Col:1 - Warning 35: unknown property <XX> found
+  Fatal error 2: unknown command line option 'x'
+
+
+
+Appendix A: History
+===================
+
+V2.0 (2021-02-14)
+-----------------
+- made sgfc charset aware by using iconv library (see section 4.1,
+  and options -E, -U, --default-encoding, --encoding)
+- several bug fixes related to soft linebreaks, wrong property flags,
+  memory leaks, backslash escaping
+- added ability to save resulting SGF file to memory (SaveFileHandler)
+- reorganized sourced code (src/ subdirectory, options.c file, ...)
+  and added unit tests
+- thanks to Patrick Näf for his feedback, patches, and general discussion.
+  Check out his libsgfc++ (https://github.com/herzbube/libsgfcplusplus/)
+  which inspired many changes to SGFC V2.0
+
+
+V1.18 (2018-06-23)
+------------------
+- fixed multiple segfaults and memory problems (reported by Arne Padmos)
+
+
+V1.17 (2009-11-30/2014-03-25)
+------------------
+- fixed broken '\' backslash handling (reported by Matthias Krings)
+- added patch for -L option: try to keep linebreaks at the end of nodes.
+  Patch provided by Eric Backus. Thanks.
+- removed DIRTY_FREE compile option
+- fixed empty DD values (which are allowed and should not be deleted)
+  Thanks to Thien-Thi Nguyen for the bug report & patch.
+
+
+V1.16 (2006-08-06)
+------------------
+- fixed memory leak (reported by Dmitry Kamenetsky)
+
+
+V1.15 (2005-03-19)
+------------------
+
+- added option -r (restrictive checking)
+- added option -z (reorder variations)
+- added long options --help and --version (patch by Thien-Thi Nguyen)
+- Go: FF4 style pass moves '[]' in old FF formats are now corrected (error 65)
+- tries to be more forgiving of missing ';' and missing '(' characters.
+  See examples for error 66 and 67.
+- if property has too many values, then empty values are deleted prior to
+  non-empty ones now (e.g. PW[][white] becomes PW[white] instead of PW[])
+- BUGFIX: RE[W++1.0] is flagged as an error now (reported by Matthias Krings)
+- some code cleanup so that strict compilers issue no warnings and compiling
+  with C++ compilers works (suggestion by SunXi)
+
+
+V1.14 (2003-06-09)
+------------------
+
+- added option -m (delete markup on current move) for deletion of
+  KGS' CR[] properties to mark the current move.
+- BUGFIX: if soft linebreak was to be inserted just after a
+  '\' character the result would not be correct.
+  (thanks to Stuart Yeates for reporting this bug)
+- changed distribution license from GNU to BSD to make it easier
+  to reuse code from SGFC
+
+
+V1.13b (1998-01-20/2000-01-04)
+------------------------------
+
+- BUGFIX: game signatures of multiple games within one file were wrong
+  (thanks to Guido Adam)
+- BUGFIX: if -d parameter was out of range error message was empty
+
+
+V1.13 (1997-11-23)
+------------------
+
+- renamed options: help is now -h (instead of -?) and 'keep header' is now
+  -k (instead of -h) -- done, because '?' causes problems with some shells.
+- new property recognized: KI (integer komi) - this property is private to
+  SGB - it gets converted to the regular komi property KM
+- bug fix: trailing '0' in float values get removed again
+- beautified output: game-info entries are written on separate lines
+  and are sorted according to a suggestion of Jan van der Steen
+
+
+V1.12 (1997-06-17)
+------------------
+- new options:
+  -v ... correct variation level
+  -y ... delete specific properties
+
+
+V1.10 (1997-06-08)
+------------------
+- new options:
+  -n ... delete empty nodes
+  -g ... print game signature
+- speeded SGFC up: 2-3 times faster now (up to !20 times! faster on large
+  files if DIRTY_FREE is specified)
+- added DIRTY_FREE define in all.h (see section building)
+- fixed bug: strnccmp() ignored length argument
+- fixed bug in board position calculation - could result in removing
+  wrong AB/AW/AE values
+
+
+V1.03 (1997-06-03)
+------------------
+- fixed bug: MSDOS linebreaks (CR/LF) were sometimes transformed to two
+  linebreaks
+
+V1.02 (1997-05-26)
+------------------
+- fixed 'split node' bug
+  (root & game-info properties must stay in first node too)
+
+V1.01 (1997-05-25)
+------------------
+- fixed parsing VW property (FF4 def. in older FF caused loss of information)
+
+V1.0 (1997-05-23)
+-----------------
+- added PM property, updated parsing of FG property (according to spec)
+- added (obsolete) FF1 properties EL, EX
+
+V0.6 (1997-05)
+--------------
+- added missing FF[1] & FF[3] properties
+- check property vs. fileformat added
+- new options:
+  -o (remove obsolete properties)
+  -i (interactive mode)
+  -b (now 3 search modes for SGF data)
+- extended README (description of options, property list)
+- compiled test file: test.sgf
+- SGFC exit codes (0/5/10/20): ok/warn/error/fatal error
+- extended date/result/time/komi correction
+  (SGFC fixes up to 90% of all bad values now)
+- faulty game-info property values do not get moved to GC any longer
+- bug fixes (as always :)
+
+V0.5 (1997-04)
+--------------
+- FindStart got more sophisticated (checking for missing ';')
+- added LN, HO properties
+- saving FF[3] option removed - added pass '[tt]' option instead
+- updated soft linebreak handling according to draft
+- added linebreak style 4: ISHI format, MFGO
+- some bug fixes
+
+V0.4 (1997-02)
+--------------
+- reformatted message output; added status line
+- some messages give more informaion now (e.g. which property caused error)
+- rewritten argument parsing
+- improved ParseText: removes trailing spaces and unnecessary escapings '\';
+  applies given linebreak style
+- added better date and result parsing (DT, RE)
+- added handling of boards bigger than 19x19 (upto 52x52 now)
+- added compressed point lists
+- many minor bug fixes, new error cases (messages) added
+
+V0.3 (1996-10)
+--------------
+first public release (early beta version)
+
+
+
+Appendix B: Known properties
+============================
+
+ID  Fileformat  Type             Value
+--  ----------  ---------------  -------------------------
+AB     1234     setup            list of stone
+AE     1234     setup            list of point
+AN     --34     game-info        text
+AP     ---4     root             text : text
+AR     ---4     -                list of (point : point)
+AW     1234     setup            list of stone
+B      1234     move             move
+BL     1234     move             real
+BM     1234     move             double
+BR     1234     game-info        text
+BS     123-     game-info        number
+BT     --34     game-info        text
+C      1234     -                text
+CA     ---4     root             text
+CH     123-     -                double
+CP     --34     game-info        text
+CR     --34     -                list of point
+DD     ---4     - (inherit)      list of point
+DM     --34     -                double
+DO     --34     move             none
+DT     1234     game-info        text
+EL     12--     -                number
+EV     1234     game-info        text
+EX     12--     -                move
+FF     1234     root             number
+FG     1234     -                none | (number : text)
+GB     1234     -                double
+GC     1234     game-info        text
+GM     1234     root             number
+GN     1234     game-info        text
+GW     1234     -                double
+HA     1234     game-info (Go)   number
+HO     --34     -                double
+ID     --3-     game-info        text
+IT     --34     move             none
+KM     1234     game-info (Go)   real
+KI     SGB      game-info (Go)   number
+KO     --34     move             none
+L      12--     -                list of point
+LB     --34     -                list of (point : text)
+LN     ---4     -                list of (point : point)
+LT     --3-     -                none
+M      12--     -                list of point
+MA     --34     -                list of point
+MN     --34     move             number
+N      1234     -                text
+OB     --34     move             number
+OM     --3-     -                number
+ON     --34     game-info        text
+OP     --3-     -                real
+OT     ---4     game-info        text
+OV     --3-     -                real
+OW     --34     move             number
+PB     1234     game-info        text
+PC     1234     game-info        text
+PL     1234     setup            Color
+PM     ---4     - (inherit)      number
+PW     1234     game-info        text
+RE     1234     game-info        text
+RG     123-     -                list of point
+RO     1234     game-info        text
+RU     --34     game-info        text
+SC     123-     -                list of point
+SE     --3-     -                list of point
+SI     --3-     -                double
+SL     1234     -                list of point
+SO     1234     game-info        text
+SQ     ---4     -                list of point
+ST     ---4     root             number
+SZ     1234     root             number | (number : number)
+TB     1234     - (Go)           elist of point
+TC     --3-     - (Go)           number
+TE     1234     move             double
+TM     1234     game-info        real
+TR     --34     -                list of point
+TW     1234     - (Go)           elist of point
+UC     --34     -                double
+US     1234     game-info        text
+V      1234     -                real
+VW     1234     - (inherit)      elist of point
+W      1234     move             move
+WL     1234     move             real
+WR     1234     game-info        text
+WS     123-     game-info        number
+WT     --34     game-info        text
+
+
+
+Appendix C: List of error codes and possible causes
+===================================================
+
+Classes:
+	FE ... fatal error (program halts execution and exits)
+	E  ... error
+	W  ... warning
+	E4 ... error if source file is FF[4], warning if FF[3] or less
+	C  ... critical (by default forbids saving the file)
+
+
+ 1:FE   "unknown command '%s' (-h for help)"
+        Example: 'sgfc in.sgf out.sgf foo'
+
+ 2:FE   "unknown command line option '%c' (-h for help)"
+        Example: 'sgfc -x in.sgf'
+
+ 3:FE   "could not open source file '%s'"
+
+ 4:FE   "could not read source file '%s'"
+
+ 5:FE   "could not allocate %s (not enough memory)"
+
+ 6:W-C  "possible SGF data found in front of game-tree (before '(;')"
+        Example: >>bla[aa] (;GM[1];B[cc];)<<
+        Note: searches for '[(lc)(lc)]'
+
+ 7:FE   "no SGF data found - start mark '(;' missing?"
+        Example: simple text file
+
+ 8:E-C  "illegal char(s) found: "
+        Example: >>(;B[cc] gfhf;W[kk] ];<<
+
+ 9:E-C  "variation nesting incomplete (missing ')')"
+        Example: >>(;B[cc](;W[kk])<<
+        Note: may indicate illegal nested variations - have a look at the
+              output file to see if variations are ok
+
+10:E-C  "unexpected end of file"
+        Example: >>(;B[cc<<
+
+11:E-C  "property identifier too long - more than 100 chars (deleted)"
+        Note: indicates that file is not a SGF file
+
+12:E    "empty variation found (ignored)"
+        Example: >>(;B[cc]())<<
+
+13:E-C  "property <%s> may have only ONE value (other values deleted)"
+        Example: >>(;B[cc][dd])<< or >>(;B[cc;AW[dd][ee])<<
+
+14:E    "illegal <%s> value deleted: " (i.e. illegal property value)
+        Example: >>(;B[111];PL[r])<<
+
+15:E/E4 "illegal <%s> value corrected; new value: [%s], old value: "
+        Example: >>(;B[a a];DM[1  kk]BL[30.])<<
+
+16:E    "lowercase char not allowed in property identifier"
+        Note: only for FF[4]
+        Example: >>(;FF[4];Black[cc];White[dd])<<
+
+17:W/E  "empty <%s> value %s (deleted)" (found/not allowed)
+        Example: >>(;PL[]AB[];C[])<<
+
+18:E    "illegal root property <%s> found (assuming %s)" (action taken)
+        Example: >>(;FF[four]GM[Go]SZ[-12])<<
+
+19:W-C  "game stored in tree %d is not Go. Cannot check move & position type"
+        " -> errors will not get corrected!"
+        Example: >>(;GM[12])<<
+
+20:E-C  "property <%s> without any values found (ignored)"
+        Example: >>(;B[cc]PL;W[aa];AB)<< or >>(;B[aa] B  L[321.0])<<
+        Note: the second case ('BL' -> 'B L') causes loss of
+              timing information
+
+21:E-C  "illegal variation start found (ignored)"
+        Example: >>(;B[cc]((;W[dd])<<
+
+22:W    "$00 byte detected (replaced with space) - binary file?"
+        Note: SGFC cannot handle $00 bytes in property values
+
+23:E    "property <%s> expects compose type value (value deleted): "
+        Example: >>(;LB[aa][bb][cc])<<
+
+24:W    "move in root node found (split node into two)"
+        Example: >>(;GM[1]B[dd])<<
+
+25:E    "illegal <%s> value corrected; new value: [%s:%s], old value: "
+        Example: >>(;LB[a a: text])<<
+
+26:FE   "could not open destination file '%s'"
+
+27:FE   "could not write destination file '%s'"
+
+28:E    "property <%s> already exists (%s)" (merged/deleted)
+        Example: >>(;C[text1][text2]LB[aa:1]LB[bb:2];W[aa]W[bb])<<
+
+29:W    "property <%s> deleted"
+        Example: >>(;FF[1]BS[1]RG[aa][cc])<< - invoke SGFC with option '-o'
+        Example 2: >>(;B[aa]BL[309.0])<< - invoke SGFC with option '-yBL'
+
+30:E4   "setup and move properties mixed within a node (%s)"
+        Example: >>(;B[cc]AW[dd])<< or >>(;B[cc]PL[B])<<
+
+31:W    "property identifier consists of more than 2 uppercase letters: <%s>"
+        Example: >>(;PIW[])<<
+
+32:E    "root property <%s> outside root node (deleted)"
+        Example: >>(;B[aa];GM[1])<<
+
+33:E4   "gameinfo property <%s> has illegal format %s - value: "
+        Example: >>(;RE[Black wins by 12 points])<<
+
+34:E    "file not saved (because of critical errors)"
+        Note: This is done because of possible loss of information during
+              the conversion. May be overruled by '-c' option.
+
+35:W    "unknown property <%s> %s" (found/deleted)
+        Example: >>(;KK[txt])<<
+
+36:E-C  "missing semicolon at start of game-tree (detection might be wrong [try -b2])"
+        Example: >>( GM[1]FF[3][SZ[19])<<
+
+37:E    "black and white move within a node (split into two nodes)"
+        Example: >>(;B[cc]W[dd])<<
+
+38:E    "%s <%s> position not unique ([partially] deleted) - value(s): "
+        Example: >>(;AB[aa][aa];MA[kk]TR[kk])<<
+
+39:W    "AddStone <%s> has no effect ([partially] deleted) - value(s): "
+        Example: >>(;B[cc];AB[cc])<<
+
+40:W    "property <%s> is not defined in FF[%d] (%s)" (ok/converted/deleted)
+        Example: >>(;FF[4];L[aa][bb];BS[1])<<
+
+41:E    "annotation property <%s> contradicts previous property (deleted)"
+        Example: >>(;GB[2]GW[1])<<
+
+42:E4   "combination of <%s> found (converted to <%s>)"
+        Note: combinations of TE & BM get converted to DO & IT
+        Example: >>(;B[cc]TE[1]BM[1];W[dd]BM[1]TE[1])<<
+
+43:E    "move annotation <%s> without a move in same node (deleted)"
+        Example: >>(;TE[2])<<
+
+44:E4   "game info entry <%s> outside game-info node (line:%d col:%d) (deleted)"
+        Example: >>(;GN[test];HA[4])<<
+
+45:W    "different file formats stored in one file (may cause troubles with some applications)"
+        Example: >>(;GN[1])  (;FF[3]GN[2])<<
+
+46:E-C  "unknown file format FF[%d] (only able to handle files up to FF[4])"
+        Example: >>(;FF[5])<<
+
+47:E    "square board size in rectangular definition (corrected)"
+        Example: >>(;SZ[19:19])<<
+
+48:FE   "no source file specified (-h for help)"
+        Example: 'sgfc -u'
+
+49:FE   "bad command line option parameter '%s' (-h for help)"
+        Example: 'sgfc -lr'
+
+50:E    "board size too big (corrected to %dx%d)"
+        Example: >>(;SZ[1000])<< or >>(;FF[4]SZ[10:53])<<
+
+51:E-C  "used feature is not defined in FF[%d] (parsing done anyway)"
+        Example: >>(;FF[2]SZ[13:9])<< or >>(;FF[3];AB[aa:ee])<<
+
+52:E    "<VW> property: %s (%s)" (various error cases for FF[3],FF[4]) (action)
+        Example: >>(;VW[][aa])<< or >>(;FF[3]VW[aj][ak][al][am])<<
+
+53:FE   "different game types stored in one file (may cause troubles with some applications)"
+        Example: >>(;GM[1])(;GM[2])<<
+
+54:E-C  "values without property id found (deleted)"
+        Example: >>(;[ab][ac])<<
+
+55:W	"empty node deleted"
+        Example: >>(;;;C[empty])<< and invoke sgfc with option '-n'
+
+56:W	"possible incorrect variation level cannot be corrected"
+        Example: >>(;B[dd];W[aa](;B[bb])(;AE[aa];W[ba])(;AE[dd][aa];B[ef]))<<
+
+57:W	"variation level corrected"
+        Example: >>(;GM[1];W[aa](;B[bb])(;AE[aa];W[ba])(;AE[aa];W[ef]))<<
+
+58:W    "forbidden move found (played on a point occupied by another stone)"
+        Example: >>(;GM[1];B[aa];W[aa])<<
+
+59:W    "obsolete <KI> property found: %s" (converted / deleted)
+        Example: >>(;(;KI[11])(;KM[3.5]KI[7]))<<
+
+60:E    "file contains more than one game tree"
+        Example: >>(;GM[1])(;GM[1])<< and check with command line option '-r'
+
+61:W    "value of HA property differs from number of setup stones"
+        Example: >>(;GM[1]AB[aa][bb])(;GM[1]HA[3];B[bb])<< and check with '-r'
+
+62:W    "setup stones in main line found (outside root node)"
+        Example: >>(;GM[1];W[cc];AB[aa]AE[cc])<< and check with '-r'
+
+63:W    "two successive moves have the same color"
+        Example: >>(;GM[1];B[dd];W[cc];W[dd])<< and check with '-r'
+
+64:E    "cannot reorder variations: too many variations"
+        Example: create a file with more than 100 variations of one move.
+
+65:E    "FF4 style pass value '[]' in older format found (corrected)"
+        Example: >>(;GM[1]FF[3];B[])(;GM[1];B[])<<
+
+66:E-C  "node outside variation found. Missing '(' assumed."
+        Example: >>(;FF[4](;C[var 1]) ;C[var 2]))<<
+
+67:E-C  "illegal chars after variation start '(' found. Missing ';' assumed."
+        Example: >>(;FF[4](;C[var 1]) (C[var 2]))<<
+
+68:FE   "unknown command line option '%s' (-h for help)"
+        Example: 'sgfc --versi'
+
+69:FE   "unknown or inconvertible encoding given as parameter in %s: '%s'"
+        Example: 'sgfc --default-encoding=xyz123'
+
+70:FE   "unknown iconv error during encoding phase encountered - byte offset: %ld"
+        Note: internal error which cannot be handled gracefully
+
+71:W-C  "encoding errors detected (faulty bytes ignored) - byte offset: %ld"
+        Example: illegal byte sequence according to specified encoding
+
+72:W-C  "unknown encoding '%s' - falling back to default encoding '%s'"
+        Example: >>(;FF[4]CA[xyz-123])<<
+
+73:FE   "charset encoding detection went wrong! Please use --encoding to override."
+        Example: >>CA[UTF-8](;FF[4]CA[ISO-8859-3])<<
+
+74:W-C  "different charset encodings stored in one file (will cause troubles with applications)"
+        Example: >>(;FF[4]CA[Shift_JIS])(;FF[4]CA[GB18030])<< when using -E2 or -E3
+
+75:FE   "different encodings in one file detected. Use option -E2/3 to parse this file"
+        Example same as in #74; using default option of -E1
