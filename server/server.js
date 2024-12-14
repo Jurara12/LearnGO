@@ -12,6 +12,11 @@ app.use(express.json());
 const upload = multer({ dest: 'uploads/' }); // Folder for storing uploaded SGF files
 const puzzles = []; // Temporary in-memory storage for puzzles
 
+// Root route
+app.get('/', (req, res) => {
+  res.send('Welcome to LearnGO Backend!');
+});
+
 // Upload endpoint
 app.post('/puzzles/upload', upload.single('file'), (req, res) => {
   const filePath = req.file.path;
