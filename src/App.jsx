@@ -7,17 +7,25 @@ const PADDING = 40;
 function App() {
   const canvasRef = useRef(null);
 
-  // Board state: 2D array of 'B', 'W', or null
-  const [board, setBoard] = useState(createEmptyBoard());
-  const [currentPlayer, setCurrentPlayer] = useState('B'); // 'B' for Black, 'W' for White
+  // Game history: array of { board, currentPlayer }
+  const [history, setHistory] = useState([{
+    board: createEmptyBoard(),
+    currentPlayer: 'B'
+  }]);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [illegalMoveMessage, setIllegalMoveMessage] = useState('');
+
+  const currentBoard = history[currentStep].board;
+  const currentPlayer = history[currentStep].currentPlayer;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     canvas.width = BOARD_SIZE * CELL_SIZE + PADDING * 2;
     canvas.height = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+
     const ctx = canvas.getContext('2d');
-    drawBoard(ctx, board);
-  }, [board]);
+    drawBoard(ctx, currentBoard);
+  }, [currentBoard]);
 
   function createEmptyBoard() {
     const arr = [];
@@ -35,7 +43,7 @@ function App() {
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
 
-    // Draw grid lines
+    // Grid lines
     for (let i = 0; i < BOARD_SIZE; i++) {
       const x = PADDING + i * CELL_SIZE;
       const y = PADDING + i * CELL_SIZE;
@@ -53,14 +61,14 @@ function App() {
       ctx.stroke();
     }
 
-    // Draw coordinates
+    // Coordinates
     const columns = 'ABCDEFGHIJKLMNOPQRST'.split('');
     ctx.fillStyle = '#000';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Top/Bottom coords (letters)
+    // Letters top/bottom
     for (let i = 0; i < BOARD_SIZE; i++) {
       const letter = columns[i];
       const x = PADDING + i * CELL_SIZE;
@@ -70,7 +78,7 @@ function App() {
       ctx.fillText(letter, x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20);
     }
 
-    // Left/Right coords (numbers)
+    // Numbers left/right
     for (let i = 0; i < BOARD_SIZE; i++) {
       const number = BOARD_SIZE - i;
       const y = PADDING + i * CELL_SIZE;
@@ -82,7 +90,7 @@ function App() {
       ctx.fillText(number, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20, y);
     }
 
-    // Draw stones
+    // Stones
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const stone = boardState[r][c];
@@ -129,45 +137,67 @@ function App() {
 
   function placeStone(col, row) {
     if (col < 0 || col >= BOARD_SIZE || row < 0 || row >= BOARD_SIZE) return;
-    if (board[row][col] !== null) return; // intersection not empty
+    if (currentBoard[row][col] !== null) return; // not empty
 
-    // Clone board for immutability
-    const newBoard = board.map(r => r.slice());
-    newBoard[row][col] = currentPlayer;
+    const newBoard = currentBoard.map(r => r.slice());
+    const player = currentPlayer;
+    const opponent = opponentPlayer(player);
 
-    // After placing stone, check captures
-    // Remove any opponent stones that have no liberties
-    const opponent = (currentPlayer === 'B') ? 'W' : 'B';
-    const groupsToRemove = findDeadGroups(newBoard, opponent);
-    groupsToRemove.forEach(group => {
+    // Tentatively place the stone
+    newBoard[row][col] = player;
+
+    // Capture opponent groups with no liberties
+    const opponentGroupsToRemove = findDeadGroups(newBoard, opponent);
+    opponentGroupsToRemove.forEach(group => {
       group.forEach(([r, c]) => {
         newBoard[r][c] = null;
       });
     });
 
-    // Check if our newly placed stone is now without liberties (self-capture)
-    // If yes, remove it as well (unless you want to forbid suicide).
-    const myGroupsToRemove = findDeadGroups(newBoard, currentPlayer);
-    // If we want to allow suicide moves, we just remove them:
+    // Check if our newly placed stone is now without liberties (suicide check)
+    const myGroupsToRemove = findDeadGroups(newBoard, player);
+    let suicide = false;
     myGroupsToRemove.forEach(group => {
-      // If the group contains the stone we just placed, it means suicide
-      // We'll remove it.
-      if (group.some(([r, c]) => r === row && c === col)) {
-        group.forEach(([r, c]) => {
-          newBoard[r][c] = null;
-        });
+      if (group.some(([gr, gc]) => gr === row && gc === col)) {
+        // The newly placed stone group is dead
+        // If we haven't captured any opponent stones, it's a suicide move
+        if (opponentGroupsToRemove.length === 0) {
+          suicide = true;
+        }
       }
     });
 
-    setBoard(newBoard);
-    setCurrentPlayer(opponentPlayer(currentPlayer));
+    if (suicide) {
+      // Illegal move under no-suicide rule, revert and show message
+      setIllegalMoveMessage("Illegal move, not allowed.");
+      return;
+    } else {
+      // If not suicide, remove our dead groups (if any)
+      myGroupsToRemove.forEach(group => {
+        group.forEach(([gr, gc]) => {
+          newBoard[gr][gc] = null;
+        });
+      });
+
+      // Update history
+      const newStep = {
+        board: newBoard,
+        currentPlayer: opponentPlayer(player)
+      };
+      const updatedHistory = history.slice(0, currentStep + 1);
+      updatedHistory.push(newStep);
+      setHistory(updatedHistory);
+      setCurrentStep(updatedHistory.length - 1);
+
+      // Clear illegal move message on successful move
+      setIllegalMoveMessage('');
+    }
   }
 
   function opponentPlayer(player) {
     return player === 'B' ? 'W' : 'B';
   }
 
-  // Find all groups of a given color that have no liberties.
   function findDeadGroups(boardState, color) {
     const visited = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(false));
     const deadGroups = [];
@@ -185,7 +215,6 @@ function App() {
     return deadGroups;
   }
 
-  // Get the group of connected stones of a given color and their liberties
   function getGroupAndLiberties(boardState, row, col, color, visited) {
     const stack = [[row, col]];
     const group = [];
@@ -199,7 +228,6 @@ function App() {
       const neighbors = getNeighbors(r, c);
       for (const [nr, nc] of neighbors) {
         if (boardState[nr][nc] === null) {
-          // This is a liberty
           if (!liberties.some(([lr, lc]) => lr === nr && lc === nc)) {
             liberties.push([nr, nc]);
           }
@@ -226,15 +254,43 @@ function App() {
     return neighbors;
   }
 
+  function moveBack() {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      setIllegalMoveMessage(''); // Clear message when navigating history
+    }
+  }
+
+  function moveForward() {
+    if (currentStep < history.length - 1) {
+      setCurrentStep(currentStep + 1);
+      setIllegalMoveMessage(''); // Clear message when navigating history
+    }
+  }
+
   return (
-    <div style={{ textAlign: 'center', marginTop: '20px' }}>
-      <h1>Go Board - Current Player: {currentPlayer === 'B' ? 'Black' : 'White'}</h1>
+    <div style={{ textAlign: 'center', marginTop: '20px', width: '600px', marginLeft: 'auto', marginRight: 'auto' }}>
+      <div style={{ height: '30px', lineHeight: '30px', marginBottom: '10px' }}>
+        Current Player: {currentPlayer === 'B' ? 'Black' : 'White'}
+      </div>
+
       <canvas
         ref={canvasRef}
-        style={{ border: '1px solid #000' }}
+        style={{ border: '1px solid #000', display: 'block', margin: '0 auto' }}
         onClick={handleClick}
         onTouchStart={handleTouch}
       />
+
+      <div style={{ marginTop: '10px' }}>
+        <button onClick={moveBack} disabled={currentStep === 0}>Move Back</button>
+        <button onClick={moveForward} disabled={currentStep === history.length - 1}>Move Forward</button>
+      </div>
+
+      {illegalMoveMessage && (
+        <div style={{ marginTop: '10px', color: 'red' }}>
+          {illegalMoveMessage}
+        </div>
+      )}
     </div>
   );
 }
