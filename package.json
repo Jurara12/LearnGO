@@ -25,3 +25,7 @@
     "vite": "^4.0.0"
   }
 }
+"scripts": {
+  "predeploy": "npm run build",
+  "deploy": "gh-pages -d dist"
+}
