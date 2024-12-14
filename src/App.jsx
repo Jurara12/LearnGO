@@ -8,7 +8,6 @@ function App() {
   const canvasRef = useRef(null);
   const [board, setBoard] = useState(createEmptyBoard());
   const [currentPlayer, setCurrentPlayer] = useState('B'); // 'B' for Black, 'W' for White
-  const [illegalMoveMessage, setIllegalMoveMessage] = useState('');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,13 +42,13 @@ function App() {
       // Vertical lines
       ctx.beginPath();
       ctx.moveTo(x, PADDING);
-      ctx.lineTo(x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
+      ctx.lineTo(x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE); // Fixed
       ctx.stroke();
 
       // Horizontal lines
       ctx.beginPath();
       ctx.moveTo(PADDING, y);
-      ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
+      ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE, y); // Fixed
       ctx.stroke();
     }
 
@@ -99,7 +98,6 @@ function App() {
 
     setBoard(newBoard);
     setCurrentPlayer(currentPlayer === 'B' ? 'W' : 'B');
-    setIllegalMoveMessage('');
   }
 
   return (
@@ -110,7 +108,6 @@ function App() {
         style={{ border: '1px solid black', margin: '10px auto', display: 'block' }}
         onClick={handleClick}
       />
-      {illegalMoveMessage && <div style={{ color: 'red' }}>{illegalMoveMessage}</div>}
     </div>
   );
 }
