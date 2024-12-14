@@ -117,7 +117,6 @@ function App() {
     const newBoard = currentBoard.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
-    // Remove captured opponent stones
     const opponent = currentPlayer === "B" ? "W" : "B";
     const opponentDeadGroups = findDeadGroups(newBoard, opponent);
 
@@ -203,30 +202,16 @@ function App() {
       .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
   }
 
-  function moveBack() {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-      setIllegalMoveMessage("");
-    }
-  }
-
-  function moveForward() {
-    if (currentStep < history.length - 1) {
-      setCurrentStep(currentStep + 1);
-      setIllegalMoveMessage("");
-    }
-  }
-
   function parseSgfFile(content) {
     const moves = [];
     const lines = content.split(";");
     for (const line of lines) {
       if (line.startsWith("B[") || line.startsWith("W[")) {
-        const move = {
-          color: line[0],
-          coords: line.slice(2, 4),
-        };
-        moves.push(move);
+        const color = line[0] === "B" ? "B" : "W";
+        const coords = line.slice(2, 4);
+        const col = coords.charCodeAt(0) - 97; // Convert SGF letter to column index
+        const row = coords.charCodeAt(1) - 97; // Convert SGF letter to row index
+        moves.push({ color, row, col });
       }
     }
     setSgfMoves(moves);
@@ -242,15 +227,27 @@ function App() {
     }
   }
 
+  function applySgfMove(step) {
+    const newBoard = createEmptyBoard();
+    for (let i = 0; i <= step; i++) {
+      const { color, row, col } = sgfMoves[i];
+      newBoard[row][col] = color;
+    }
+    setHistory([newBoard]);
+    setCurrentStep(0);
+  }
+
   function moveSgfBack() {
     if (currentSgfStep > 0) {
       setCurrentSgfStep(currentSgfStep - 1);
+      applySgfMove(currentSgfStep - 1);
     }
   }
 
   function moveSgfForward() {
     if (currentSgfStep < sgfMoves.length - 1) {
       setCurrentSgfStep(currentSgfStep + 1);
+      applySgfMove(currentSgfStep + 1);
     }
   }
 
