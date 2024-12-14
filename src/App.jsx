@@ -11,6 +11,7 @@ function App() {
   const [currentPlayer, setCurrentPlayer] = useState("B"); // 'B' for Black, 'W' for White
   const [illegalMoveMessage, setIllegalMoveMessage] = useState("");
   const [hintMove, setHintMove] = useState(null); // Hint for puzzle moves
+  const [captures, setCaptures] = useState({ B: 0, W: 0 }); // Capture counters
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -129,18 +130,26 @@ function App() {
     const opponent = currentPlayer === "B" ? "W" : "B";
     const opponentDeadGroups = findDeadGroups(newBoard, opponent);
 
+    let stonesCaptured = 0; // Count captured stones
     if (opponentDeadGroups.length > 0) {
       opponentDeadGroups.forEach((group) => {
+        stonesCaptured += group.length;
         group.forEach(([r, c]) => {
           newBoard[r][c] = null;
         });
       });
+
+      // Update capture counter
+      setCaptures((prevCaptures) => ({
+        ...prevCaptures,
+        [currentPlayer]: prevCaptures[currentPlayer] + stonesCaptured,
+      }));
     }
 
     // Check for suicide
     const myDeadGroups = findDeadGroups(newBoard, currentPlayer);
     if (myDeadGroups.some((group) => group.some(([r, c]) => r === row && c === col))) {
-      setIllegalMoveMessage("Illegal move: Suicide not allowed.");
+      setIllegalMoveMessage("Illegal move: Self capture not allowed.");
       return;
     }
 
@@ -241,6 +250,9 @@ function App() {
     <div style={{ textAlign: "center", marginTop: "20px" }}>
       <div style={{ marginBottom: "10px" }}>
         Current Player: {currentPlayer === "B" ? "Black" : "White"}
+      </div>
+      <div style={{ marginBottom: "10px" }}>
+        Black Captures: {captures.B} | White Captures: {captures.W}
       </div>
       <canvas
         ref={canvasRef}
