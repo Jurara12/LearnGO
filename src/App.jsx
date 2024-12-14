@@ -202,6 +202,7 @@ function App() {
       .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
   }
 
+  // SGF Parsing and Rendering
   function parseSgfFile(content) {
     const moves = [];
     const lines = content.split(";");
@@ -209,8 +210,8 @@ function App() {
       if (line.startsWith("B[") || line.startsWith("W[")) {
         const color = line[0] === "B" ? "B" : "W";
         const coords = line.slice(2, 4);
-        const col = coords.charCodeAt(0) - 97; // Convert SGF letter to column index
-        const row = coords.charCodeAt(1) - 97; // Convert SGF letter to row index
+        const col = coords.charCodeAt(0) - 97;
+        const row = coords.charCodeAt(1) - 97;
         moves.push({ color, row, col });
       }
     }
@@ -248,6 +249,22 @@ function App() {
     if (currentSgfStep < sgfMoves.length - 1) {
       setCurrentSgfStep(currentSgfStep + 1);
       applySgfMove(currentSgfStep + 1);
+    }
+  }
+
+  // V1CODE Navigation: Move Back
+  function moveBack() {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      setIllegalMoveMessage("");
+    }
+  }
+
+  // V1CODE Navigation: Move Forward
+  function moveForward() {
+    if (currentStep < history.length - 1) {
+      setCurrentStep(currentStep + 1);
+      setIllegalMoveMessage("");
     }
   }
 
