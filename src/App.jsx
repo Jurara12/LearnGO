@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from "react";
 
 const BOARD_SIZE = 19; // 19x19 board
 const CELL_SIZE = 30; // Size of each cell
@@ -8,8 +8,8 @@ function App() {
   const canvasRef = useRef(null);
   const [history, setHistory] = useState([createEmptyBoard()]);
   const [currentStep, setCurrentStep] = useState(0);
-  const [currentPlayer, setCurrentPlayer] = useState('B'); // 'B' for Black, 'W' for White
-  const [illegalMoveMessage, setIllegalMoveMessage] = useState('');
+  const [currentPlayer, setCurrentPlayer] = useState("B"); // 'B' for Black, 'W' for White
+  const [illegalMoveMessage, setIllegalMoveMessage] = useState("");
   const [hintMove, setHintMove] = useState(null); // Hint for puzzle moves
 
   useEffect(() => {
@@ -17,7 +17,7 @@ function App() {
     canvas.width = BOARD_SIZE * CELL_SIZE + PADDING * 2;
     canvas.height = BOARD_SIZE * CELL_SIZE + PADDING * 2;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     drawBoard(ctx, history[currentStep], hintMove);
   }, [history, currentStep, hintMove]);
 
@@ -33,11 +33,11 @@ function App() {
   // Draw the board
   function drawBoard(ctx, boardState, hint) {
     // Background
-    ctx.fillStyle = '#f7c87b';
+    ctx.fillStyle = "#f7c87b";
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
     // Grid lines
-    ctx.strokeStyle = '#000';
+    ctx.strokeStyle = "#000";
     ctx.lineWidth = 1;
 
     for (let i = 0; i < BOARD_SIZE; i++) {
@@ -58,11 +58,11 @@ function App() {
     }
 
     // Coordinates
-    const columns = 'ABCDEFGHIJKLMNOPQRST'.split('');
-    ctx.fillStyle = '#000';
-    ctx.font = '14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    const columns = "ABCDEFGHIJKLMNOPQRST".split("");
+    ctx.fillStyle = "#000";
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
 
     // Draw letters (top/bottom)
     for (let i = 0; i < BOARD_SIZE; i++) {
@@ -79,10 +79,10 @@ function App() {
       const number = BOARD_SIZE - i; // Numbers decrease from top to bottom
       const y = PADDING + i * CELL_SIZE;
 
-      ctx.textAlign = 'right';
+      ctx.textAlign = "right";
       ctx.fillText(number, PADDING - 20, y);
 
-      ctx.textAlign = 'left';
+      ctx.textAlign = "left";
       ctx.fillText(number, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20, y);
     }
 
@@ -108,9 +108,9 @@ function App() {
     const y = PADDING + row * CELL_SIZE;
     ctx.beginPath();
     ctx.arc(x, y, CELL_SIZE / 2 - 2, 0, 2 * Math.PI, false);
-    ctx.fillStyle = color === 'B' ? '#000' : '#FFF';
+    ctx.fillStyle = color === "B" ? "#000" : "#FFF";
     ctx.fill();
-    ctx.strokeStyle = '#000';
+    ctx.strokeStyle = "#000";
     ctx.stroke();
   }
 
@@ -120,7 +120,7 @@ function App() {
     const y = PADDING + row * CELL_SIZE;
     ctx.beginPath();
     ctx.arc(x, y, CELL_SIZE / 2 - 4, 0, 2 * Math.PI, false);
-    ctx.fillStyle = 'rgba(0, 0, 255, 0.3)'; // Light blue for hint
+    ctx.fillStyle = "rgba(0, 0, 255, 0.3)"; // Light blue for hint
     ctx.fill();
   }
 
@@ -147,7 +147,7 @@ function App() {
     const currentBoard = history[currentStep];
 
     if (currentBoard[row][col] !== null) {
-      setIllegalMoveMessage('Illegal move: Spot already occupied.');
+      setIllegalMoveMessage("Illegal move: Spot already occupied.");
       return; // Space is already occupied
     }
 
@@ -155,39 +155,75 @@ function App() {
     newBoard[row][col] = currentPlayer;
 
     // Check for suicide rule
-    if (isSuicide(newBoard, row, col, currentPlayer)) {
-      setIllegalMoveMessage('Illegal move: Suicide is not allowed.');
+    const liberties = calculateLiberties(newBoard, row, col, currentPlayer);
+    if (liberties.length === 0) {
+      setIllegalMoveMessage("Illegal move: Suicide is not allowed.");
       return;
     }
-
-    // Apply capturing logic
-    captureStones(newBoard, row, col, currentPlayer);
 
     const newHistory = history.slice(0, currentStep + 1);
     newHistory.push(newBoard);
     setHistory(newHistory);
     setCurrentStep(newHistory.length - 1);
-    setCurrentPlayer(currentPlayer === 'B' ? 'W' : 'B'); // Toggle player
-    setIllegalMoveMessage('');
+    setCurrentPlayer(currentPlayer === "B" ? "W" : "B"); // Toggle player
+    setIllegalMoveMessage("");
   }
 
-  // Check if a move is suicide
-  function isSuicide(board, row, col, player) {
-    const liberties = calculateLiberties(board, row, col, player);
-    return liberties.length === 0;
+  // Calculate liberties for a stone or group
+  function calculateLiberties(board, row, col, color) {
+    const visited = Array.from({ length: BOARD_SIZE }, () =>
+      new Array(BOARD_SIZE).fill(false)
+    );
+    const stack = [[row, col]];
+    const liberties = [];
+
+    while (stack.length > 0) {
+      const [r, c] = stack.pop();
+      if (visited[r][c]) continue;
+      visited[r][c] = true;
+
+      const neighbors = getNeighbors(r, c);
+      for (const [nr, nc] of neighbors) {
+        if (board[nr][nc] === null) {
+          liberties.push([nr, nc]);
+        } else if (board[nr][nc] === color && !visited[nr][nc]) {
+          stack.push([nr, nc]);
+        }
+      }
+    }
+
+    return liberties;
+  }
+
+  // Get neighbors of a point
+  function getNeighbors(r, c) {
+    const deltas = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    const neighbors = [];
+    for (const [dr, dc] of deltas) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+        neighbors.push([nr, nc]);
+      }
+    }
+    return neighbors;
   }
 
   // Add logic for hint
   function showHint() {
-    // Example hint logic: pick the center of the board
-    setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) });
+    setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) }); // Example: center of board
   }
 
   // Move back in history
   function moveBack() {
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
-      setIllegalMoveMessage('');
+      setIllegalMoveMessage("");
     }
   }
 
@@ -195,21 +231,25 @@ function App() {
   function moveForward() {
     if (currentStep < history.length - 1) {
       setCurrentStep(currentStep + 1);
-      setIllegalMoveMessage('');
+      setIllegalMoveMessage("");
     }
   }
 
   return (
-    <div style={{ textAlign: 'center', marginTop: '20px' }}>
-      <div style={{ marginBottom: '10px' }}>
-        Current Player: {currentPlayer === 'B' ? 'Black' : 'White'}
+    <div style={{ textAlign: "center", marginTop: "20px" }}>
+      <div style={{ marginBottom: "10px" }}>
+        Current Player: {currentPlayer === "B" ? "Black" : "White"}
       </div>
       <canvas
         ref={canvasRef}
-        style={{ border: '1px solid black', margin: '10px auto', display: 'block' }}
+        style={{
+          border: "1px solid black",
+          margin: "10px auto",
+          display: "block",
+        }}
         onClick={handleClick}
       />
-      <div style={{ marginTop: '10px' }}>
+      <div style={{ marginTop: "10px" }}>
         <button onClick={moveBack} disabled={currentStep === 0}>
           Move Back
         </button>
@@ -219,9 +259,7 @@ function App() {
         <button onClick={showHint}>Hint</button>
       </div>
       {illegalMoveMessage && (
-        <div style={{ marginTop: '10px', color: 'red' }}>
-          {illegalMoveMessage}
-        </div>
+        <div style={{ marginTop: "10px", color: "red" }}>{illegalMoveMessage}</div>
       )}
     </div>
   );
