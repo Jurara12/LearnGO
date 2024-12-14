@@ -21,14 +21,16 @@ function App() {
     drawBoard(ctx, history[currentStep], hintMove);
   }, [history, currentStep, hintMove]);
 
+  // Create an empty board
   function createEmptyBoard() {
-    const arr = [];
+    const board = [];
     for (let i = 0; i < BOARD_SIZE; i++) {
-      arr[i] = new Array(BOARD_SIZE).fill(null);
+      board.push(new Array(BOARD_SIZE).fill(null));
     }
-    return arr;
+    return board;
   }
 
+  // Draw the board
   function drawBoard(ctx, boardState, hint) {
     // Background
     ctx.fillStyle = '#f7c87b';
@@ -71,6 +73,7 @@ function App() {
     }
   }
 
+  // Draw a stone
   function drawStone(ctx, col, row, color) {
     const x = PADDING + col * CELL_SIZE;
     const y = PADDING + row * CELL_SIZE;
@@ -82,6 +85,7 @@ function App() {
     ctx.stroke();
   }
 
+  // Draw a hint
   function drawHint(ctx, col, row) {
     const x = PADDING + col * CELL_SIZE;
     const y = PADDING + row * CELL_SIZE;
@@ -91,11 +95,13 @@ function App() {
     ctx.fill();
   }
 
+  // Handle clicking on the board
   function handleClick(e) {
     const { gridX, gridY } = getGridCoords(e.clientX, e.clientY);
     placeStone(gridX, gridY);
   }
 
+  // Convert screen coordinates to grid coordinates
   function getGridCoords(clientX, clientY) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -106,6 +112,7 @@ function App() {
     return { gridX, gridY };
   }
 
+  // Place a stone on the board
   function placeStone(col, row) {
     if (col < 0 || col >= BOARD_SIZE || row < 0 || row >= BOARD_SIZE) return; // Out of bounds
     const currentBoard = history[currentStep];
@@ -118,6 +125,15 @@ function App() {
     const newBoard = currentBoard.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
+    // Check for suicide rule
+    if (isSuicide(newBoard, row, col, currentPlayer)) {
+      setIllegalMoveMessage('Illegal move: Suicide is not allowed.');
+      return;
+    }
+
+    // Apply capturing logic
+    captureStones(newBoard, row, col, currentPlayer);
+
     const newHistory = history.slice(0, currentStep + 1);
     newHistory.push(newBoard);
     setHistory(newHistory);
@@ -126,6 +142,85 @@ function App() {
     setIllegalMoveMessage('');
   }
 
+  // Check if a move is suicide
+  function isSuicide(board, row, col, player) {
+    const liberties = calculateLiberties(board, row, col, player);
+    return liberties.length === 0;
+  }
+
+  // Calculate liberties of a stone or group
+  function calculateLiberties(board, row, col, player) {
+    const visited = new Set();
+    const liberties = [];
+
+    function dfs(r, c) {
+      const key = `${r},${c}`;
+      if (visited.has(key)) return;
+      visited.add(key);
+
+      const neighbors = getNeighbors(r, c);
+      for (const [nr, nc] of neighbors) {
+        if (board[nr][nc] === null) {
+          liberties.push([nr, nc]);
+        } else if (board[nr][nc] === player) {
+          dfs(nr, nc);
+        }
+      }
+    }
+
+    dfs(row, col);
+    return liberties;
+  }
+
+  // Capture opponent stones
+  function captureStones(board, row, col, player) {
+    const opponent = player === 'B' ? 'W' : 'B';
+    const neighbors = getNeighbors(row, col);
+
+    for (const [nr, nc] of neighbors) {
+      if (board[nr][nc] === opponent) {
+        const liberties = calculateLiberties(board, nr, nc, opponent);
+        if (liberties.length === 0) {
+          removeGroup(board, nr, nc);
+        }
+      }
+    }
+  }
+
+  // Remove a group of stones from the board
+  function removeGroup(board, row, col) {
+    const visited = new Set();
+    const color = board[row][col];
+
+    function dfs(r, c) {
+      const key = `${r},${c}`;
+      if (visited.has(key)) return;
+      visited.add(key);
+
+      board[r][c] = null;
+
+      const neighbors = getNeighbors(r, c);
+      for (const [nr, nc] of neighbors) {
+        if (board[nr][nc] === color) {
+          dfs(nr, nc);
+        }
+      }
+    }
+
+    dfs(row, col);
+  }
+
+  // Get neighboring cells
+  function getNeighbors(row, col) {
+    const directions = [
+      [-1, 0], [1, 0], [0, -1], [0, 1],
+    ];
+    return directions
+      .map(([dr, dc]) => [row + dr, col + dc])
+      .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
+  }
+
+  // Move back in history
   function moveBack() {
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
@@ -133,23 +228,11 @@ function App() {
     }
   }
 
+  // Move forward in history
   function moveForward() {
     if (currentStep < history.length - 1) {
       setCurrentStep(currentStep + 1);
       setIllegalMoveMessage('');
-    }
-  }
-
-  function showHint() {
-    // For now, we'll simulate the hint by providing a random empty position
-    const currentBoard = history[currentStep];
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        if (currentBoard[row][col] === null) {
-          setHintMove({ col, row });
-          return;
-        }
-      }
     }
   }
 
@@ -170,7 +253,6 @@ function App() {
         <button onClick={moveForward} disabled={currentStep === history.length - 1}>
           Move Forward
         </button>
-        <button onClick={showHint}>Hint</button>
       </div>
       {illegalMoveMessage && (
         <div style={{ marginTop: '10px', color: 'red' }}>
