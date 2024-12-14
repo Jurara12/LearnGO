@@ -57,35 +57,6 @@ function App() {
       ctx.stroke();
     }
 
-    // Coordinates
-    const columns = "ABCDEFGHIJKLMNOPQRST".split("");
-    ctx.fillStyle = "#000";
-    ctx.font = "14px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    // Draw letters (top/bottom)
-    for (let i = 0; i < BOARD_SIZE; i++) {
-      const letter = columns[i];
-      const x = PADDING + i * CELL_SIZE;
-      // Top
-      ctx.fillText(letter, x, PADDING - 20);
-      // Bottom
-      ctx.fillText(letter, x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20);
-    }
-
-    // Draw numbers (left/right)
-    for (let i = 0; i < BOARD_SIZE; i++) {
-      const number = BOARD_SIZE - i; // Numbers decrease from top to bottom
-      const y = PADDING + i * CELL_SIZE;
-
-      ctx.textAlign = "right";
-      ctx.fillText(number, PADDING - 20, y);
-
-      ctx.textAlign = "left";
-      ctx.fillText(number, PADDING + (BOARD_SIZE - 1) * CELL_SIZE + 20, y);
-    }
-
     // Draw stones
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -154,22 +125,90 @@ function App() {
     const newBoard = currentBoard.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
+    // Remove captured opponent stones
+    const opponent = currentPlayer === "B" ? "W" : "B";
+    const opponentDeadGroups = findDeadGroups(newBoard, opponent);
+
+    if (opponentDeadGroups.length > 0) {
+      opponentDeadGroups.forEach((group) => {
+        group.forEach(([r, c]) => {
+          newBoard[r][c] = null;
+        });
+      });
+    }
+
+    // Check for suicide
+    const myDeadGroups = findDeadGroups(newBoard, currentPlayer);
+    if (myDeadGroups.some((group) => group.some(([r, c]) => r === row && c === col))) {
+      setIllegalMoveMessage("Illegal move: Suicide not allowed.");
+      return;
+    }
+
+    // Update board and history
     const newHistory = history.slice(0, currentStep + 1);
     newHistory.push(newBoard);
     setHistory(newHistory);
     setCurrentStep(newHistory.length - 1);
-    setCurrentPlayer(currentPlayer === "B" ? "W" : "B"); // Toggle player
+    setCurrentPlayer(opponent); // Switch player
     setIllegalMoveMessage("");
   }
 
-  // Add logic for hint
-  function showHint() {
-    setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) }); // Example: center of board
+  // Find dead groups of stones
+  function findDeadGroups(board, color) {
+    const visited = Array.from({ length: BOARD_SIZE }, () =>
+      Array(BOARD_SIZE).fill(false)
+    );
+    const deadGroups = [];
 
-    // Set a timeout to remove the hint after 3 seconds
-    setTimeout(() => {
-      setHintMove(null); // Clear the hint after 3 seconds
-    }, 3000);
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!visited[r][c] && board[r][c] === color) {
+          const { group, liberties } = getGroupAndLiberties(board, r, c, color, visited);
+          if (liberties.length === 0) {
+            deadGroups.push(group);
+          }
+        }
+      }
+    }
+    return deadGroups;
+  }
+
+  // Get group and liberties for a stone
+  function getGroupAndLiberties(board, row, col, color, visited) {
+    const stack = [[row, col]];
+    const group = [];
+    const liberties = [];
+    visited[row][col] = true;
+
+    while (stack.length > 0) {
+      const [r, c] = stack.pop();
+      group.push([r, c]);
+
+      const neighbors = getNeighbors(r, c);
+      neighbors.forEach(([nr, nc]) => {
+        if (board[nr][nc] === null && !liberties.some(([lr, lc]) => lr === nr && lc === nc)) {
+          liberties.push([nr, nc]);
+        } else if (board[nr][nc] === color && !visited[nr][nc]) {
+          visited[nr][nc] = true;
+          stack.push([nr, nc]);
+        }
+      });
+    }
+
+    return { group, liberties };
+  }
+
+  // Get neighbors of a cell
+  function getNeighbors(r, c) {
+    const deltas = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    return deltas
+      .map(([dr, dc]) => [r + dr, c + dc])
+      .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
   }
 
   // Move back in history
@@ -186,6 +225,16 @@ function App() {
       setCurrentStep(currentStep + 1);
       setIllegalMoveMessage("");
     }
+  }
+
+  // Add logic for hint
+  function showHint() {
+    setHintMove({ row: Math.floor(BOARD_SIZE / 2), col: Math.floor(BOARD_SIZE / 2) });
+
+    // Set a timeout to remove the hint after 3 seconds
+    setTimeout(() => {
+      setHintMove(null);
+    }, 3000);
   }
 
   return (
