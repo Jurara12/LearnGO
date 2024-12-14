@@ -1,4 +1,4 @@
-const sgfParse = require('sgf-parse');
+const sgfParse = require('sgf-parse'); // This is the library for parsing SGF files
 
 // Function to parse SGF content and extract puzzle data
 function parseSGFData(sgfContent) {
