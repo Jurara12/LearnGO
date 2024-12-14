@@ -13,8 +13,8 @@ function App() {
   const [hintMove, setHintMove] = useState(null); // Hint for puzzle moves
   const [captures, setCaptures] = useState({ B: 0, W: 0 }); // Capture counters
 
-  // For SGF file parsing
-  const [sgfMoves, setSgfMoves] = useState([]);
+  // For SGF puzzle functionality
+  const [sgfMoves, setSgfMoves] = useState([]); // Parsed moves from SGF
   const [currentSgfStep, setCurrentSgfStep] = useState(0);
 
   useEffect(() => {
@@ -117,10 +117,90 @@ function App() {
     const newBoard = currentBoard.map((r) => r.slice());
     newBoard[row][col] = currentPlayer;
 
+    // Remove captured opponent stones
+    const opponent = currentPlayer === "B" ? "W" : "B";
+    const opponentDeadGroups = findDeadGroups(newBoard, opponent);
+
+    let stonesCaptured = 0;
+    if (opponentDeadGroups.length > 0) {
+      opponentDeadGroups.forEach((group) => {
+        stonesCaptured += group.length;
+        group.forEach(([r, c]) => {
+          newBoard[r][c] = null;
+        });
+      });
+
+      setCaptures((prevCaptures) => ({
+        ...prevCaptures,
+        [currentPlayer]: prevCaptures[currentPlayer] + stonesCaptured,
+      }));
+    }
+
+    const myDeadGroups = findDeadGroups(newBoard, currentPlayer);
+    if (myDeadGroups.some((group) => group.some(([r, c]) => r === row && c === col))) {
+      setIllegalMoveMessage("Illegal move: Self capture not allowed.");
+      return;
+    }
+
     setHistory([...history.slice(0, currentStep + 1), newBoard]);
     setCurrentStep(currentStep + 1);
     setCurrentPlayer(currentPlayer === "B" ? "W" : "B");
     setIllegalMoveMessage("");
+  }
+
+  function findDeadGroups(board, color) {
+    const visited = Array.from({ length: BOARD_SIZE }, () =>
+      Array(BOARD_SIZE).fill(false)
+    );
+    const deadGroups = [];
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!visited[r][c] && board[r][c] === color) {
+          const { group, liberties } = getGroupAndLiberties(board, r, c, color, visited);
+          if (liberties.length === 0) {
+            deadGroups.push(group);
+          }
+        }
+      }
+    }
+    return deadGroups;
+  }
+
+  function getGroupAndLiberties(board, row, col, color, visited) {
+    const stack = [[row, col]];
+    const group = [];
+    const liberties = [];
+    visited[row][col] = true;
+
+    while (stack.length > 0) {
+      const [r, c] = stack.pop();
+      group.push([r, c]);
+
+      const neighbors = getNeighbors(r, c);
+      neighbors.forEach(([nr, nc]) => {
+        if (board[nr][nc] === null && !liberties.some(([lr, lc]) => lr === nr && lc === nc)) {
+          liberties.push([nr, nc]);
+        } else if (board[nr][nc] === color && !visited[nr][nc]) {
+          visited[nr][nc] = true;
+          stack.push([nr, nc]);
+        }
+      });
+    }
+
+    return { group, liberties };
+  }
+
+  function getNeighbors(r, c) {
+    const deltas = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    return deltas
+      .map(([dr, dc]) => [r + dr, c + dc])
+      .filter(([nr, nc]) => nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE);
   }
 
   function moveBack() {
@@ -180,6 +260,7 @@ function App() {
         <div>
           Current Player: {currentPlayer === "B" ? "Black" : "White"}
         </div>
+        <div>Black Captures: {captures.B} | White Captures: {captures.W}</div>
         <canvas
           ref={canvasRef}
           style={{ border: "1px solid black", display: "block" }}
@@ -191,18 +272,22 @@ function App() {
         <button onClick={moveForward} disabled={currentStep === history.length - 1}>
           Move Forward
         </button>
+        <button onClick={() => setHintMove({ row: 9, col: 9 })}>
+          Hint
+        </button>
       </div>
       <div style={{ marginLeft: "20px" }}>
-        <button>
+        <label>
+          Upload SGF File:
           <input type="file" onChange={handleFileUpload} />
-        </button>
+        </label>
         <div>
-          SGF Moves: {currentSgfStep} / {sgfMoves.length}
+          SGF Moves: {currentSgfStep + 1} / {sgfMoves.length}
         </div>
         <button onClick={moveSgfBack} disabled={currentSgfStep === 0}>
           Previous SGF Move
         </button>
-        <button onClick={moveSgfForward} disabled={currentSgfStep === sgfMoves.length - 1}>
+        <button onClick={moveSgfForward} disabled={currentSgfStep >= sgfMoves.length - 1}>
           Next SGF Move
         </button>
       </div>
